@@ -1,4 +1,5 @@
 <?php
+
 require_once 'includes/header.php';
 require_once 'includes/getdbkeys.php';
 
@@ -13,48 +14,105 @@ if ($settings['disabledToBottom'] === 'true') {
   $sql = "SELECT * FROM subscriptions WHERE user_id = :userId ORDER BY next_payment ASC, inactive ASC";
 }
 
+$params = array();
+
 if (isset($_COOKIE['sortOrder']) && $_COOKIE['sortOrder'] != "") {
   $sort = $_COOKIE['sortOrder'] ?? 'next_payment';
-  $sortOrder = $sort;
-  $allowedSortCriteria = ['name', 'id', 'next_payment', 'price', 'payer_user_id', 'category_id', 'payment_method_id', 'inactive', 'alphanumeric'];
-  $order = ($sort == "price" || $sort == "id") ? "DESC" : "ASC";
-
-  if ($sort == "alphanumeric") {
-    $sort = "name";
-  }
-
-  if (!in_array($sort, $allowedSortCriteria)) {
-    $sort = "next_payment";
-  }
-
-  $sql = "SELECT * FROM subscriptions WHERE user_id = :userId";
-
-  $orderByClauses = [];
-
-  if ($settings['disabledToBottom'] === 'true') {
-    if (in_array($sort, ["payer_user_id", "category_id", "payment_method_id"])) {
-      $orderByClauses[] = "$sort $order";
-      $orderByClauses[] = "inactive ASC";
-    } else {
-      $orderByClauses[] = "inactive ASC";
-      $orderByClauses[] = "$sort $order";
-    }
-  } else {
-    $orderByClauses[] = "$sort $order";
-    if ($sort != "inactive") {
-      $orderByClauses[] = "inactive ASC";
-    }
-  }
-
-  if ($sort != "next_payment") {
-    $orderByClauses[] = "next_payment ASC";
-  }
-
-  $sql .= " ORDER BY " . implode(", ", $orderByClauses);
 }
+
+$sortOrder = $sort;
+$allowedSortCriteria = ['name', 'id', 'next_payment', 'price', 'payer_user_id', 'category_id', 'payment_method_id', 'inactive', 'alphanumeric'];
+$order = ($sort == "price" || $sort == "id") ? "DESC" : "ASC";
+
+if ($sort == "alphanumeric") {
+  $sort = "name";
+}
+
+if (!in_array($sort, $allowedSortCriteria)) {
+  $sort = "next_payment";
+}
+
+$sql = "SELECT * FROM subscriptions WHERE user_id = :userId";
+
+if (isset($_GET['member'])) {
+  $memberIds = explode(',', $_GET['member']);
+  $placeholders = array_map(function ($key) {
+    return ":member{$key}";
+  }, array_keys($memberIds));
+
+  $sql .= " AND payer_user_id IN (" . implode(',', $placeholders) . ")";
+
+  foreach ($memberIds as $key => $memberId) {
+    $params[":member{$key}"] = $memberId;
+  }
+}
+
+if (isset($_GET['category'])) {
+  $categoryIds = explode(',', $_GET['category']);
+  $placeholders = array_map(function ($key) {
+    return ":category{$key}";
+  }, array_keys($categoryIds));
+
+  $sql .= " AND category_id IN (" . implode(',', $placeholders) . ")";
+
+  foreach ($categoryIds as $key => $categoryId) {
+    $params[":category{$key}"] = $categoryId;
+  }
+}
+
+if (isset($_GET['payment'])) {
+  $paymentIds = explode(',', $_GET['payment']);
+  $placeholders = array_map(function ($key) {
+    return ":payment{$key}";
+  }, array_keys($paymentIds));
+
+  $sql .= " AND payment_method_id IN (" . implode(',', $placeholders) . ")";
+
+  foreach ($paymentIds as $key => $paymentId) {
+    $params[":payment{$key}"] = $paymentId;
+  }
+}
+
+if (!isset($settings['hideDisabledSubscriptions']) || $settings['hideDisabledSubscriptions'] !== 'true') {
+  if (isset($_GET['state']) && $_GET['state'] != "") {
+    $sql .= " AND inactive = :inactive";
+    $params[':inactive'] = $_GET['state'];
+  }
+}
+
+$orderByClauses = [];
+
+if ($settings['disabledToBottom'] === 'true') {
+  if (in_array($sort, ["payer_user_id", "category_id", "payment_method_id"])) {
+    $orderByClauses[] = "$sort $order";
+    $orderByClauses[] = "inactive ASC";
+  } else {
+    $orderByClauses[] = "inactive ASC";
+    $orderByClauses[] = "$sort $order";
+  }
+} else {
+  $orderByClauses[] = "$sort $order";
+  if ($sort != "inactive") {
+    $orderByClauses[] = "inactive ASC";
+  }
+}
+
+if ($sort != "next_payment") {
+  $orderByClauses[] = "next_payment ASC";
+}
+
+$sql .= " ORDER BY " . implode(", ", $orderByClauses);
 
 $stmt = $db->prepare($sql);
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+
+
+if (!empty($params)) {
+  foreach ($params as $key => $value) {
+    $stmt->bindValue($key, $value, SQLITE3_INTEGER);
+  }
+}
+
 $result = $stmt->execute();
 if ($result) {
   $subscriptions = array();
@@ -113,8 +171,11 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
                 <?php
                 foreach ($members as $member) {
                   $selectedClass = '';
-                  if (isset($_GET['member']) && $_GET['member'] == $member['id']) {
-                    $selectedClass = 'selected';
+                  if (isset($_GET['member'])) {
+                    $memberIds = explode(',', $_GET['member']);
+                    if (in_array($member['id'], $memberIds)) {
+                      $selectedClass = 'selected';
+                    }
                   }
                   ?>
                   <div class="filter-item <?= $selectedClass ?>" data-memberid="<?= $member['id'] ?>"><?= $member['name'] ?>
@@ -139,8 +200,11 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
                     $category['name'] = translate("no_category", $i18n);
                   }
                   $selectedClass = '';
-                  if (isset($_GET['category']) && $_GET['category'] == $category['id']) {
-                    $selectedClass = 'selected';
+                  if (isset($_GET['category'])) {
+                    $categoryIds = explode(',', $_GET['category']);
+                    if (in_array($category['id'], $categoryIds)) {
+                      $selectedClass = 'selected';
+                    }
                   }
                   ?>
                   <div class="filter-item <?= $selectedClass ?>" data-categoryid="<?= $category['id'] ?>">
@@ -163,8 +227,11 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
                 <?php
                 foreach ($payment_methods as $payment) {
                   $selectedClass = '';
-                  if (isset($_GET['payment']) && in_array( $payment['id'], $_GET['payment'])) {
-                    $selectedClass = 'selected';
+                  if (isset($_GET['payment'])) {
+                    $paymentIds = explode(',', $_GET['payment']);
+                    if (in_array($payment['id'], $paymentIds)) {
+                      $selectedClass = 'selected';
+                    }
                   }
                   ?>
                   <div class="filter-item <?= $selectedClass ?>" data-paymentid="<?= $payment['id'] ?>">
@@ -275,6 +342,10 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       }
       if (isset($settings['showMonthlyPrice']) && $settings['showMonthlyPrice'] === 'true') {
         $print[$id]['price'] = getPricePerMonth($cycle, $frequency, $print[$id]['price']);
+      }
+      if (isset($settings['showOriginalPrice']) && $settings['showOriginalPrice'] === 'true') {
+        $print[$id]['original_price'] = floatval($subscription['price']);
+        $print[$id]['original_currency_code'] = $currencies[$subscription['currency_id']]['code'];
       }
     }
 
