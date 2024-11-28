@@ -18,6 +18,13 @@ if (isset($settings['color_theme'])) {
   $colorTheme = $settings['color_theme'];
 }
 
+$locale = isset($_COOKIE['user_locale']) ? $_COOKIE['user_locale'] : 'en_US';
+$formatter = new IntlDateFormatter(
+  $locale,
+  IntlDateFormatter::MEDIUM,
+  IntlDateFormatter::NONE
+);
+
 if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
 
 
@@ -139,14 +146,17 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     $id = $subscription['id'];
     $print[$id]['id'] = $id;
     $print[$id]['logo'] = $subscription['logo'] != "" ? "images/uploads/logos/" . $subscription['logo'] : "";
-    $print[$id]['name'] = htmlspecialchars_decode($subscription['name'] ?? "");
+    $print[$id]['name'] = $subscription['name'] ?? "";
     $cycle = $subscription['cycle'];
     $frequency = $subscription['frequency'];
     $print[$id]['billing_cycle'] = getBillingCycle($cycle, $frequency, $i18n);
     $paymentMethodId = $subscription['payment_method_id'];
     $print[$id]['currency_code'] = $currencies[$subscription['currency_id']]['code'];
     $currencyId = $subscription['currency_id'];
-    $print[$id]['next_payment'] = date('M d, Y', strtotime($subscription['next_payment']));
+    $next_payment_timestamp = strtotime($subscription['next_payment']);
+    $formatted_date = $formatter->format($next_payment_timestamp);
+    $print[$id]['next_payment'] = $formatted_date;
+    $print[$id]['auto_renew'] = $subscription['auto_renew'];
     $paymentIconFolder = (strpos($payment_methods[$paymentMethodId]['icon'], 'images/uploads/icons/') !== false) ? "" : "images/uploads/logos/";
     $print[$id]['payment_method_icon'] = $paymentIconFolder . $payment_methods[$paymentMethodId]['icon'];
     $print[$id]['payment_method_name'] = $payment_methods[$paymentMethodId]['name'];
@@ -155,8 +165,9 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     $print[$id]['payer_user_id'] = $subscription['payer_user_id'];
     $print[$id]['price'] = floatval($subscription['price']);
     $print[$id]['inactive'] = $subscription['inactive'];
-    $print[$id]['url'] = htmlspecialchars_decode($subscription['url'] ?? "");
-    $print[$id]['notes'] = htmlspecialchars_decode($subscription['notes'] ?? "");
+    $print[$id]['url'] = $subscription['url'] ?? "";
+    $print[$id]['notes'] = $subscription['notes'] ?? "";
+    $print[$id]['replacement_subscription_id'] = $subscription['replacement_subscription_id'];
 
     if (isset($settings['convertCurrency']) && $settings['convertCurrency'] === 'true' && $currencyId != $mainCurrencyId) {
       $print[$id]['price'] = getPriceConverted($print[$id]['price'], $currencyId, $db);
@@ -183,7 +194,7 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
   }
 
   if (isset($print)) {
-    printSubscriptions($print, $sort, $categories, $members, $i18n, $colorTheme, "../../", $settings['disabledToBottom']);
+    printSubscriptions($print, $sort, $categories, $members, $i18n, $colorTheme, "../../", $settings['disabledToBottom'], $settings['mobileNavigation']);
   }
 
   if (count($subscriptions) == 0) {

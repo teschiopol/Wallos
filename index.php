@@ -121,6 +121,15 @@ if ($result) {
   }
 }
 
+foreach ($subscriptions as $subscription) {
+  $memberId = $subscription['payer_user_id'];
+  $members[$memberId]['count']++;
+  $categoryId = $subscription['category_id'];
+  $categories[$categoryId]['count']++;
+  $paymentMethodId = $subscription['payment_method_id'];
+  $payment_methods[$paymentMethodId]['count']++;
+}
+
 $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden";
 ?>
 <style>
@@ -137,11 +146,24 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       if (version_compare($version, $latestVersion) == -1) {
         ?>
         <div class="update-banner">
-          <?= translate('new_version_available', $i18n) ?>: <span><?= $latestVersion ?></span>
+          <?= translate('new_version_available', $i18n) ?>:
+          <span><a href="https://github.com/ellite/Wallos/releases/tag/<?= htmlspecialchars($latestVersion) ?>"
+              target="_blank">
+              <?= htmlspecialchars($latestVersion) ?>
+            </a></span>
         </div>
         <?php
       }
     }
+  }
+
+  if ($demoMode) {
+    ?>
+    <div class="demo-banner">
+      Running in <b>Demo Mode</b>, certain actions and settings are disabled.<br>
+      The database will be reset every 120 minutes.
+    </div>
+    <?php
   }
   ?>
 
@@ -155,6 +177,7 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
         <input type="text" autocomplete="off" name="search" id="search" placeholder="<?= translate('search', $i18n) ?>"
           onkeyup="searchSubscriptions()" />
         <span class="fa-solid fa-magnifying-glass search-icon"></span>
+        <span class="fa-solid fa-xmark clear-search" onClick="clearSearch()"></span>
       </div>
 
       <div class="filtermenu on-dashboard">
@@ -170,6 +193,9 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
               <div class="filtermenu-submenu-content" id="filter-member">
                 <?php
                 foreach ($members as $member) {
+                  if ($member['count'] == 0) {
+                    continue;
+                  }
                   $selectedClass = '';
                   if (isset($_GET['member'])) {
                     $memberIds = explode(',', $_GET['member']);
@@ -196,6 +222,9 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
               <div class="filtermenu-submenu-content" id="filter-category">
                 <?php
                 foreach ($categories as $category) {
+                  if ($category['count'] == 0) {
+                    continue;
+                  }
                   if ($category['name'] == "No category") {
                     $category['name'] = translate("no_category", $i18n);
                   }
@@ -226,6 +255,9 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
               <div class="filtermenu-submenu-content" id="filter-payment">
                 <?php
                 foreach ($payment_methods as $payment) {
+                  if ($payment['count'] == 0) {
+                    continue;
+                  }
                   $selectedClass = '';
                   if (isset($_GET['payment'])) {
                     $paymentIds = explode(',', $_GET['payment']);
@@ -324,7 +356,10 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       $paymentMethodId = $subscription['payment_method_id'];
       $print[$id]['currency_code'] = $currencies[$subscription['currency_id']]['code'];
       $currencyId = $subscription['currency_id'];
-      $print[$id]['next_payment'] = date('M d, Y', strtotime($subscription['next_payment']));
+      $print[$id]['auto_renew'] = $subscription['auto_renew'];
+      $next_payment_timestamp = strtotime($subscription['next_payment']);
+      $formatted_date = $formatter->format($next_payment_timestamp);
+      $print[$id]['next_payment'] = $formatted_date;
       $paymentIconFolder = (strpos($payment_methods[$paymentMethodId]['icon'], 'images/uploads/icons/') !== false) ? "" : "images/uploads/logos/";
       $print[$id]['payment_method_icon'] = $paymentIconFolder . $payment_methods[$paymentMethodId]['icon'];
       $print[$id]['payment_method_name'] = $payment_methods[$paymentMethodId]['name'];
@@ -335,6 +370,7 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       $print[$id]['inactive'] = $subscription['inactive'];
       $print[$id]['url'] = $subscription['url'];
       $print[$id]['notes'] = $subscription['notes'];
+      $print[$id]['replacement_subscription_id'] = $subscription['replacement_subscription_id'];
 
       if (isset($settings['convertCurrency']) && $settings['convertCurrency'] === 'true' && $currencyId != $mainCurrencyId) {
         $print[$id]['price'] = getPriceConverted($print[$id]['price'], $currencyId, $db);
@@ -361,7 +397,7 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
     }
 
     if (isset($print)) {
-      printSubscriptions($print, $sort, $categories, $members, $i18n, $colorTheme, "", $settings['disabledToBottom']);
+      printSubscriptions($print, $sort, $categories, $members, $i18n, $colorTheme, "", $settings['disabledToBottom'], $settings['mobileNavigation']);
     }
     $db->close();
 
@@ -455,6 +491,22 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
           </div>
         </div>
         <div class="split33">
+          <label><?= translate('auto_renewal', $i18n) ?></label>
+          <div class="inline height50">
+            <input type="checkbox" id="auto_renew" name="auto_renew" checked>
+            <label for="auto_renew"><?= translate('automatically_renews', $i18n) ?></label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <div class="inline">
+        <div class="split50">
+          <label for="start_date"><?= translate('start_date', $i18n) ?></label>
+          <input type="date" id="start_date" name="start_date">
+        </div>
+        <div class="split50">
           <label for="next_payment"><?= translate('next_payment', $i18n) ?></label>
           <input type="date" id="next_payment" name="next_payment" required>
         </div>
@@ -507,9 +559,9 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       </select>
     </div>
 
-    <div class="form-group-inline">
+    <div class="form-group-inline grow">
       <input type="checkbox" id="notifications" name="notifications" onchange="toggleNotificationDays()">
-      <label for="notifications"><?= translate('enable_notifications', $i18n) ?></label>
+      <label for="notifications" class="grow"><?= translate('enable_notifications', $i18n) ?></label>
     </div>
 
     <div class="form-group">
@@ -543,9 +595,35 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       <input type="text" id="notes" name="notes" placeholder="<?= translate('notes', $i18n) ?>">
     </div>
 
-    <div class="form-group-inline">
-      <input type="checkbox" id="inactive" name="inactive">
-      <label for="inactive"><?= translate('inactive', $i18n) ?></label>
+    <div class="form-group">
+      <div class="inline grow">
+        <input type="checkbox" id="inactive" name="inactive" onchange="toggleReplacementSub()">
+        <label for="inactive" class="grow"><?= translate('inactive', $i18n) ?></label>
+      </div>
+    </div>
+
+    <?php
+    $orderedSubscriptions = $subscriptions;
+    usort($orderedSubscriptions, function ($a, $b) {
+      return strnatcmp(strtolower($a['name']), strtolower($b['name']));
+    });
+    ?>
+
+    <div class="form-group hide" id="replacement_subscritpion">
+      <label for="replacement_subscription_id"><?= translate('replaced_with', $i18n) ?>:</label>
+      <select id="replacement_subscription_id" name="replacement_subscription_id">
+        <option value="0"><?= translate('none', $i18n) ?></option>
+        <?php
+        foreach ($orderedSubscriptions as $sub) {
+          if ($sub['inactive'] == 0) {
+            ?>
+            <option value="<?= htmlspecialchars($sub['id']) ?>"><?= htmlspecialchars($sub['name']) ?>
+            </option>
+            <?php
+          }
+        }
+        ?>
+      </select>
     </div>
 
     <div class="buttons">
@@ -558,7 +636,14 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
   </form>
 </section>
 <script src="scripts/dashboard.js?<?= $version ?>"></script>
-
 <?php
+if (isset($_GET['add'])) {
+  ?>
+  <script>
+    addSubscription();
+  </script>
+  <?php
+}
+
 require_once 'includes/footer.php';
 ?>

@@ -18,6 +18,8 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
             $subscriptionData['logo'] = $row['logo'];
             $subscriptionData['price'] = $row['price'];
             $subscriptionData['currency_id'] = $row['currency_id'];
+            $subscriptionData['auto_renew'] = $row['auto_renew'];
+            $subscriptionData['start_date'] = $row['start_date'];
             $subscriptionData['next_payment'] = $row['next_payment'];
             $subscriptionData['frequency'] = $row['frequency'];
             $subscriptionData['cycle'] = $row['cycle'];
@@ -30,6 +32,7 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
             $subscriptionData['url'] = htmlspecialchars_decode($row['url'] ?? "");
             $subscriptionData['notify_days_before'] = $row['notify_days_before'];
             $subscriptionData['cancellation_date'] = $row['cancellation_date'];
+            $subscriptionData['replacement_subscription_id'] = $row['replacement_subscription_id'];
 
             $subscriptionJson = json_encode($subscriptionData);
             header('Content-Type: application/json');

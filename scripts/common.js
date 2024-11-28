@@ -70,12 +70,19 @@ function showSuccessMessage(message) {
 
 document.addEventListener('DOMContentLoaded', function () {
 
+  const userLocale = navigator.language || navigator.languages[0];
+  document.cookie = `user_locale=${userLocale}; expires=Fri, 31 Dec 9999 23:59:59 GMT; SameSite=Strict`;
+
   if (window.update_theme_settings) {
     const prefersDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const themePreference = prefersDarkMode ? 'dark' : 'light';
     const darkThemeCss = document.querySelector("#dark-theme");
     darkThemeCss.disabled = themePreference === 'light';
-    document.body.className = themePreference;
+
+    // Preserve existing classes on the body tag
+    const existingClasses = document.body.className.split(' ').filter(cls => cls !== 'dark' && cls !== 'light');
+    document.body.className = [...existingClasses, themePreference].join(' ');
+
     document.cookie = `inUseTheme=${themePreference}; expires=Fri, 31 Dec 9999 23:59:59 GMT; SameSite=Strict`;
     const themeColorMetaTag = document.querySelector('meta[name="theme-color"]');
     themeColorMetaTag.setAttribute('content', themePreference === 'dark' ? '#222222' : '#FFFFFF');
@@ -95,3 +102,14 @@ document.addEventListener('DOMContentLoaded', function () {
     isDropdownOpen = true;
   });
 });
+
+function getCookie(name) {
+  const cookies = document.cookie.split(';');
+  for (let cookie of cookies) {
+    cookie = cookie.trim();
+    if (cookie.startsWith(`${name}=`)) {
+      return cookie.substring(name.length + 1);
+    }
+  }
+  return null;
+}

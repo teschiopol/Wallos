@@ -4,6 +4,11 @@ require_once '../../includes/connect_endpoint.php';
 require_once '../../includes/inputvalidation.php';
 require_once '../../includes/getsettings.php';
 
+if (!file_exists('../../images/uploads/logos')) {
+    mkdir('../../images/uploads/logos', 0777, true);
+    mkdir('../../images/uploads/logos/avatars', 0777, true);
+}
+
 function sanitizeFilename($filename)
 {
     $filename = preg_replace("/[^a-zA-Z0-9\s]/", "", $filename);
@@ -116,13 +121,13 @@ function resizeAndUploadLogo($uploadedFile, $uploadDir, $name, $settings)
             $newHeight = $height;
 
             if ($width > $targetWidth) {
-                $newWidth = (int)$targetWidth;
-                $newHeight = (int)(($targetWidth / $width) * $height);
+                $newWidth = (int) $targetWidth;
+                $newHeight = (int) (($targetWidth / $width) * $height);
             }
 
             if ($newHeight > $targetHeight) {
-                $newWidth = (int)(($targetHeight / $newHeight) * $newWidth);
-                $newHeight = (int)$targetHeight;
+                $newWidth = (int) (($targetHeight / $newHeight) * $newWidth);
+                $newHeight = (int) $targetHeight;
             }
 
             $resizedImage = imagecreatetruecolor($newWidth, $newHeight);
@@ -162,6 +167,8 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
         $frequency = $_POST["frequency"];
         $cycle = $_POST["cycle"];
         $nextPayment = $_POST["next_payment"];
+        $autoRenew = isset($_POST['auto_renew']) ? true : false;
+        $startDate = $_POST["start_date"];
         $paymentMethodId = $_POST["payment_method_id"];
         $payerUserId = $_POST["payer_user_id"];
         $categoryId = $_POST['category_id'];
@@ -173,6 +180,11 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
         $notifyDaysBefore = $_POST['notify_days_before'];
         $inactive = isset($_POST['inactive']) ? true : false;
         $cancellationDate = $_POST['cancellation_date'] ?? null;
+        $replacementSubscriptionId = $_POST['replacement_subscription_id'];
+
+        if ($replacementSubscriptionId == 0 || $inactive == 0) {
+            $replacementSubscriptionId = null;
+        }
 
         if ($logoUrl !== "") {
             $logo = getLogoFromUrl($logoUrl, '../../images/uploads/logos/', $name, $settings, $i18n);
@@ -188,23 +200,44 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
         }
 
         if (!$isEdit) {
-            $sql = "INSERT INTO subscriptions (name, logo, price, currency_id, next_payment, cycle, frequency, notes, 
-                        payment_method_id, payer_user_id, category_id, notify, inactive, url, notify_days_before, user_id, cancellation_date) 
-                        VALUES (:name, :logo, :price, :currencyId, :nextPayment, :cycle, :frequency, :notes, 
-                        :paymentMethodId, :payerUserId, :categoryId, :notify, :inactive, :url, :notifyDaysBefore, :userId, :cancellationDate)";
+            $sql = "INSERT INTO subscriptions (
+                        name, logo, price, currency_id, next_payment, cycle, frequency, notes, 
+                        payment_method_id, payer_user_id, category_id, notify, inactive, url, 
+                        notify_days_before, user_id, cancellation_date, replacement_subscription_id,
+                        auto_renew, start_date
+                    ) VALUES (
+                        :name, :logo, :price, :currencyId, :nextPayment, :cycle, :frequency, :notes, 
+                        :paymentMethodId, :payerUserId, :categoryId, :notify, :inactive, :url, 
+                        :notifyDaysBefore, :userId, :cancellationDate, :replacement_subscription_id,
+                        :autoRenew, :startDate
+                    )";
         } else {
             $id = $_POST['id'];
+            $sql = "UPDATE subscriptions SET 
+                        name = :name, 
+                        price = :price, 
+                        currency_id = :currencyId,
+                        next_payment = :nextPayment, 
+                        auto_renew = :autoRenew,
+                        start_date = :startDate,
+                        cycle = :cycle, 
+                        frequency = :frequency, 
+                        notes = :notes, 
+                        payment_method_id = :paymentMethodId,
+                        payer_user_id = :payerUserId, 
+                        category_id = :categoryId, 
+                        notify = :notify, 
+                        inactive = :inactive, 
+                        url = :url, 
+                        notify_days_before = :notifyDaysBefore, 
+                        cancellation_date = :cancellationDate, 
+                        replacement_subscription_id = :replacement_subscription_id";
+
             if ($logo != "") {
-                $sql = "UPDATE subscriptions SET name = :name, logo = :logo, price = :price, currency_id = :currencyId,
-                     next_payment = :nextPayment, cycle = :cycle, frequency = :frequency, notes = :notes, payment_method_id = :paymentMethodId,
-                     payer_user_id = :payerUserId, category_id = :categoryId, notify = :notify, inactive = :inactive, 
-                     url = :url, notify_days_before = :notifyDaysBefore, cancellation_date = :cancellationDate WHERE id = :id AND user_id = :userId";
-            } else {
-                $sql = "UPDATE subscriptions SET name = :name, price = :price, currency_id = :currencyId,
-                     next_payment = :nextPayment, cycle = :cycle, frequency = :frequency, notes = :notes, payment_method_id = :paymentMethodId,
-                     payer_user_id = :payerUserId, category_id = :categoryId, notify = :notify, inactive = :inactive, 
-                     url = :url, notify_days_before = :notifyDaysBefore, cancellation_date = :cancellationDate WHERE id = :id AND user_id = :userId";
+                $sql .= ", logo = :logo";
             }
+
+            $sql .= " WHERE id = :id AND user_id = :userId";
         }
 
         $stmt = $db->prepare($sql);
@@ -215,6 +248,8 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
         $stmt->bindParam(':price', $price, SQLITE3_FLOAT);
         $stmt->bindParam(':currencyId', $currencyId, SQLITE3_INTEGER);
         $stmt->bindParam(':nextPayment', $nextPayment, SQLITE3_TEXT);
+        $stmt->bindParam(':autoRenew', $autoRenew, SQLITE3_INTEGER);
+        $stmt->bindParam(':startDate', $startDate, SQLITE3_TEXT);
         $stmt->bindParam(':cycle', $cycle, SQLITE3_INTEGER);
         $stmt->bindParam(':frequency', $frequency, SQLITE3_INTEGER);
         $stmt->bindParam(':notes', $notes, SQLITE3_TEXT);
@@ -230,6 +265,7 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
             $stmt->bindParam(':id', $id, SQLITE3_INTEGER);
         }
         $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
+        $stmt->bindParam(':replacement_subscription_id', $replacementSubscriptionId, SQLITE3_INTEGER);
 
         if ($stmt->execute()) {
             $success['status'] = "Success";

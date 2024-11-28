@@ -33,8 +33,16 @@ function resetForm() {
   logoSearchButton.classList.add("disabled");
   const submitButton = document.querySelector("#save-button");
   submitButton.disabled = false;
+  const autoRenew = document.querySelector("#auto_renew");
+  autoRenew.checked = true;
+  const startDate = document.querySelector("#start_date");
+  startDate.value = new Date().toISOString().split('T')[0];
   const notifyDaysBefore = document.querySelector("#notify_days_before");
   notifyDaysBefore.disabled = true;
+  const replacementSubscriptionIdSelect = document.querySelector("#replacement_subscription_id");
+  replacementSubscriptionIdSelect.value = "0";
+  const replacementSubscription = document.querySelector(`#replacement_subscritpion`);
+  replacementSubscription.classList.add("hide");
   const form = document.querySelector("#subs-form");
   form.reset();
   closeLogoSearch();
@@ -74,6 +82,8 @@ function fillEditFormFields(subscription) {
   const payerSelect = document.querySelector("#payer_user");
   payerSelect.value = subscription.payer_user_id;
 
+  const startDate = document.querySelector("#start_date");
+  startDate.value = subscription.start_date;
   const nextPament = document.querySelector("#next_payment");
   nextPament.value = subscription.next_payment;
   const cancellationDate = document.querySelector("#cancellation_date");
@@ -86,15 +96,30 @@ function fillEditFormFields(subscription) {
   const url = document.querySelector("#url");
   url.value = subscription.url;
 
+  const autoRenew = document.querySelector("#auto_renew");
+  if (autoRenew) {
+    autoRenew.checked = subscription.auto_renew;
+  }
+
   const notifications = document.querySelector("#notifications");
   if (notifications) {
     notifications.checked = subscription.notify;
   }
 
   const notifyDaysBefore = document.querySelector("#notify_days_before");
-  notifyDaysBefore.value = subscription.notify_days_before;
+  notifyDaysBefore.value = subscription.notify_days_before ?? 0;
   if (subscription.notify === 1) {
     notifyDaysBefore.disabled = false;
+  }
+
+  const replacementSubscriptionIdSelect = document.querySelector("#replacement_subscription_id");
+  replacementSubscriptionIdSelect.value = subscription.replacement_subscription_id ?? 0;
+
+  const replacementSubscription = document.querySelector(`#replacement_subscritpion`);
+  if (subscription.inactive) {
+    replacementSubscription.classList.remove("hide");
+  } else {
+    replacementSubscription.classList.add("hide");
   }
 
   const deleteButton = document.querySelector("#deletesub");
@@ -128,6 +153,7 @@ function openEditSubscription(event, id) {
       }
     })
     .catch((error) => {
+      console.log(error);
       showErrorMessage(translate('failed_to_load_subscription'));
     });
 }
@@ -180,7 +206,7 @@ function deleteSubscription(event, id) {
       .then(response => {
         if (response.ok) {
           showSuccessMessage(translate('subscription_deleted'));
-          fetchSubscriptions();
+          fetchSubscriptions(null, null, "delete");
           closeAddSubscription();
         } else {
           showErrorMessage(translate('error_deleting_subscription'));
@@ -208,7 +234,34 @@ function cloneSubscription(event, id) {
     .then(data => {
       if (data.success) {
         const id = data.id;
-        fetchSubscriptions(id, event);
+        fetchSubscriptions(id, event, "clone");
+        showSuccessMessage(decodeURI(data.message));
+      } else {
+        showErrorMessage(data.message || translate('error'));
+      }
+    })
+    .catch(error => {
+      showErrorMessage(error.message || translate('error'));
+    });
+}
+
+function renewSubscription(event, id) {
+  event.stopPropagation();
+  event.preventDefault();
+
+  const url = `endpoints/subscription/renew.php?id=${id}`;
+
+  fetch(url)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(translate('network_response_error'));
+      }
+      return response.json();
+    })
+    .then(data => {
+      if (data.success) {
+        const id = data.id;
+        fetchSubscriptions(id, event, "renew");
         showSuccessMessage(decodeURI(data.message));
       } else {
         showErrorMessage(data.message || translate('error'));
@@ -289,7 +342,7 @@ function closeLogoSearch() {
   logoResults.innerHTML = "";
 }
 
-function fetchSubscriptions(id, event) {
+function fetchSubscriptions(id, event, initiator) {
   const subscriptionsContainer = document.querySelector("#subscriptions");
   let getSubscriptions = "endpoints/subscriptions/get.php";
 
@@ -318,9 +371,18 @@ function fetchSubscriptions(id, event) {
           mainActions.classList.remove("hidden");
         }
       }
-      
-      if (id && event) {
+
+      if (initiator == "clone" && id && event) {
         openEditSubscription(event, id);
+      }
+
+      setSwipeElements();
+      if (initiator === "add") {
+        if (document.getElementsByClassName('subscription').length === 1) {
+          setTimeout(() => {
+            swipeHintAnimation();
+          }, 1000);
+        }
       }
     })
     .catch(error => {
@@ -343,7 +405,7 @@ function setSortOption(sortOption) {
   expirationDate.setDate(expirationDate.getDate() + daysToExpire);
   const cookieValue = encodeURIComponent(sortOption) + '; expires=' + expirationDate.toUTCString();
   document.cookie = 'sortOrder=' + cookieValue + '; SameSite=Strict';
-  fetchSubscriptions();
+  fetchSubscriptions(null, null, "sort");
   toggleSortOptions();
 }
 
@@ -391,8 +453,9 @@ function submitFormData(formData, submitButton, endpoint) {
     .then((data) => {
       if (data.status === "Success") {
         showSuccessMessage(data.message);
-        fetchSubscriptions();
+        fetchSubscriptions(null, null, "add");
         closeAddSubscription();
+
       }
     })
     .catch((error) => {
@@ -442,17 +505,31 @@ document.addEventListener('DOMContentLoaded', function () {
 
 function searchSubscriptions() {
   const searchInput = document.querySelector("#search");
+  const searchContainer = searchInput.parentElement;
   const searchTerm = searchInput.value.trim().toLowerCase();
+
+  if (searchTerm.length > 0) {
+    searchContainer.classList.add("has-text");
+  } else {
+    searchContainer.classList.remove("has-text");
+  }
 
   const subscriptions = document.querySelectorAll(".subscription");
   subscriptions.forEach(subscription => {
     const name = subscription.getAttribute('data-name').toLowerCase();
     if (!name.includes(searchTerm)) {
-      subscription.classList.add("hide");
+      subscription.parentElement.classList.add("hide");
     } else {
-      subscription.classList.remove("hide");
+      subscription.parentElement.classList.remove("hide");
     }
   });
+}
+
+function clearSearch() {
+  const searchInput = document.querySelector("#search");
+
+  searchInput.value = "";
+  searchSubscriptions();
 }
 
 function closeSubMenus() {
@@ -461,6 +538,61 @@ function closeSubMenus() {
     subMenu.classList.remove('is-open');
   });
 
+}
+
+function setSwipeElements() {
+  if (window.mobileNavigation) {
+    const swipeElements = document.querySelectorAll('.subscription');
+
+    swipeElements.forEach((element) => {
+      let startX = 0;
+      let startY = 0;
+      let currentX = 0;
+      let currentY = 0;
+      let translateX = 0;
+      const maxTranslateX = element.classList.contains('manual') ? -240 : -180;
+
+      element.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        element.style.transition = ''; // Remove transition for smooth dragging
+      });
+
+      element.addEventListener('touchmove', (e) => {
+        currentX = e.touches[0].clientX;
+        currentY = e.touches[0].clientY;
+
+        const diffX = currentX - startX;
+        const diffY = currentY - startY;
+
+        // Check if the swipe is more horizontal than vertical
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+          e.preventDefault(); // Prevent vertical scrolling
+
+          // Only update translateX if swiping within allowed range
+          if (!(translateX === maxTranslateX && diffX < 0)) {
+            translateX = Math.min(0, Math.max(maxTranslateX, diffX)); // Clamp translateX between -180 and 0
+            element.style.transform = `translateX(${translateX}px)`;
+          }
+        }
+      });
+
+      element.addEventListener('touchend', () => {
+        // Check the final swipe position to determine snap behavior
+        if (translateX < maxTranslateX / 2) {
+          // If more than halfway to the left, snap fully open
+          translateX = maxTranslateX;
+        } else {
+          // If swiped less than halfway left or swiped right, snap back to closed
+          translateX = 0;
+        }
+        element.style.transition = 'transform 0.2s ease'; // Smooth snap effect
+        element.style.transform = `translateX(${translateX}px)`;
+        element.style.zIndex = '1';
+      });
+    });
+
+  }
 }
 
 const activeFilters = [];
@@ -488,6 +620,9 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
   });
+
+  setSwipeElements();
+
 });
 
 function toggleSubMenu(subMenu) {
@@ -497,6 +632,17 @@ function toggleSubMenu(subMenu) {
   } else {
     closeSubMenus();
     subMenu.classList.add("is-open");
+  }
+}
+
+function toggleReplacementSub() {
+  const checkbox = document.getElementById('inactive');
+  const replacementSubscription = document.querySelector(`#replacement_subscritpion`);
+
+  if (checkbox.checked) {
+    replacementSubscription.classList.remove("hide");
+  } else {
+    replacementSubscription.classList.add("hide");
   }
 }
 
@@ -517,14 +663,14 @@ document.querySelectorAll('.filter-item').forEach(function (item) {
       }
     } else if (this.hasAttribute('data-memberid')) {
       const memberId = this.getAttribute('data-memberid');
-        if (activeFilters['members'].includes(memberId)) {
-            const memberIndex = activeFilters['members'].indexOf(memberId);
-            activeFilters['members'].splice(memberIndex, 1);
-            this.classList.remove('selected');
-        } else {
-            activeFilters['members'].push(memberId);
-            this.classList.add('selected');
-        }
+      if (activeFilters['members'].includes(memberId)) {
+        const memberIndex = activeFilters['members'].indexOf(memberId);
+        activeFilters['members'].splice(memberIndex, 1);
+        this.classList.remove('selected');
+      } else {
+        activeFilters['members'].push(memberId);
+        this.classList.add('selected');
+      }
     } else if (this.hasAttribute('data-paymentid')) {
       const paymentId = this.getAttribute('data-paymentid');
       if (activeFilters['payments'].includes(paymentId)) {
@@ -555,7 +701,7 @@ document.querySelectorAll('.filter-item').forEach(function (item) {
       document.querySelector('#clear-filters').classList.add('hide');
     }
 
-    fetchSubscriptions();
+    fetchSubscriptions(null, null, "filter");
   });
 });
 
@@ -569,7 +715,7 @@ function clearFilters() {
     item.classList.remove('selected');
   });
   document.querySelector('#clear-filters').classList.add('hide');
-  fetchSubscriptions();
+  fetchSubscriptions(null, null, "clearfilters");
 }
 
 let currentActions = null;
@@ -607,3 +753,33 @@ function expandActions(event, subscriptionId) {
     currentActions = null;
   }
 }
+
+function swipeHintAnimation() {
+  if (window.mobileNavigation && window.matchMedia('(max-width: 768px)').matches) {
+    const maxAnimations = 3;
+    const cookieName = 'swipeHintCount';
+
+    let count = parseInt(getCookie(cookieName)) || 0;
+    if (count < maxAnimations) {
+      const firstElement = document.querySelector('.subscription');
+      if (firstElement) {
+        firstElement.style.transition = 'transform 0.3s ease';
+        firstElement.style.transform = 'translateX(-80px)';
+
+        setTimeout(() => {
+          firstElement.style.transform = 'translateX(0px)';
+          firstElement.style.zIndex = '1';
+        }, 600);
+      }
+
+      count++;
+      document.cookie = `${cookieName}=${count}; expires=Fri, 31 Dec 9999 23:59:59 GMT; path=/; SameSite=Strict`;
+    }
+  }
+}
+
+window.addEventListener('load', () => {
+  if (document.querySelector('.subscription')) {
+    swipeHintAnimation();
+  }
+});

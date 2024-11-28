@@ -51,7 +51,7 @@ function getPriceConverted($price, $currency, $database)
     }
 }
 
-function printSubscriptions($subscriptions, $sort, $categories, $members, $i18n, $colorTheme, $imagePath, $disabledToBottom)
+function printSubscriptions($subscriptions, $sort, $categories, $members, $i18n, $colorTheme, $imagePath, $disabledToBottom, $mobileNavigation)
 {
     if ($sort === "price") {
         usort($subscriptions, function ($a, $b) {
@@ -99,94 +99,165 @@ function printSubscriptions($subscriptions, $sort, $categories, $members, $i18n,
             $currentPaymentMethodId = $subscription['payment_method_id'];
         }
         ?>
-        <div class="subscription<?= $subscription['inactive'] ? ' inactive' : '' ?>"
-            onClick="toggleOpenSubscription(<?= $subscription['id'] ?>)" data-id="<?= $subscription['id'] ?>"
-            data-name="<?= $subscription['name'] ?>">
-            <div class="subscription-main">
-                <span class="logo">
+        <div class="subscription-container">
+            <?php
+            if ($mobileNavigation === 'true') {
+                ?>
+                <div class="mobile-actions" data-id="<?= $subscription['id'] ?>">
+                    <button class="mobile-action-clone"></button>
+                    <button class="mobile-action-clone" onClick="cloneSubscription(event, <?= $subscription['id'] ?>)">
+                        <?php include $imagePath . "images/siteicons/svg/mobile-menu/clone.php"; ?>
+                        Clone
+                    </button>
+                    <button class="mobile-action-delete" onClick="deleteSubscription(event, <?= $subscription['id'] ?>)">
+                        <?php include $imagePath . "images/siteicons/svg/mobile-menu/delete.php"; ?>
+                        Delete
+                    </button>
                     <?php
-                    if ($subscription['logo'] != "") {
+                    if ($subscription['auto_renew'] != 1) {
                         ?>
-                        <img src="<?= $subscription['logo'] ?>">
+                        <button class="mobile-action-renew" onClick="renewSubscription(event, <?= $subscription['id'] ?>)">
+                            <?php include $imagePath . "images/siteicons/svg/mobile-menu/renew.php"; ?>
+                            Renew
+                        </button>
                         <?php
-                    } else {
-                        include $imagePath . "images/siteicons/svg/logo.php";
                     }
                     ?>
-                </span>
-                <span class="name"><?= $subscription['name'] ?></span>
-                <span class="cycle"><?= $subscription['billing_cycle'] ?></span>
-                <span class="next"><?= $subscription['next_payment'] ?></span>
-                <span class="price">
-                    <span class="payment_method">
-                        <img src="<?= $subscription['payment_method_icon'] ?>"
-                            title="<?= translate('payment_method', $i18n) ?>: <?= $subscription['payment_method_name'] ?>" />
-                    </span>
-                    <span class="value">
-                        <?= CurrencyFormatter::format($subscription['price'], $subscription['currency_code']) ?>
+                    <button class="mobile-action-edit" onClick="openEditSubscription(event, <?= $subscription['id'] ?>)">
+                        <?php include $imagePath . "images/siteicons/svg/mobile-menu/edit.php"; ?>
+                        Edit
+                    </button>
+                </div>
+                <?php
+            }
+
+            $subscriptionExtraClasses = "";
+            if ($subscription['inactive']) {
+                $subscriptionExtraClasses .= " inactive";
+            }
+            if ($subscription['auto_renew'] != 1) {
+                $subscriptionExtraClasses .= " manual";
+            }
+            ?>
+
+            <div class="subscription<?= $subscriptionExtraClasses ?>"
+                onClick="toggleOpenSubscription(<?= $subscription['id'] ?>)" data-id="<?= $subscription['id'] ?>"
+                data-name="<?= $subscription['name'] ?>">
+                <div class="subscription-main">
+                    <span class="logo">
                         <?php
-                        if (isset($subscription['original_price']) && $subscription['original_price'] != $subscription['price']) {
+                        if ($subscription['logo'] != "") {
                             ?>
-                            <span
-                                class="original_price">(<?= CurrencyFormatter::format($subscription['original_price'], $subscription['original_currency_code']) ?>)</span>
+                            <img src="<?= $subscription['logo'] ?>">
                             <?php
+                        } else {
+                            include $imagePath . "images/siteicons/svg/logo.php";
                         }
                         ?>
                     </span>
-                </span>
-                <button type="button" class="actions-expand" onClick="expandActions(event, <?= $subscription['id'] ?>)">
-                    <i class="fas fa-ellipsis-v"></i>
-                </button>
-                <ul class="actions">
-                    <li class="edit" title="<?= translate('edit_subscription', $i18n) ?>"
-                        onClick="openEditSubscription(event, <?= $subscription['id'] ?>)">
-                        <?php include $imagePath . "images/siteicons/svg/edit.php"; ?>
-                        <?= translate('edit_subscription', $i18n) ?>
-                    </li>
-                    <li class="delete" title="<?= translate('delete', $i18n) ?>"
-                        onClick="deleteSubscription(event, <?= $subscription['id'] ?>)">
-                        <?php include $imagePath . "images/siteicons/svg/delete.php"; ?>
-                        <?= translate('delete', $i18n) ?>
-                    </li>
-                    <li class="clone" title="<?= translate('clone', $i18n) ?>"
-                        onClick="cloneSubscription(event, <?= $subscription['id'] ?>)">
-                        <?php include $imagePath . "images/siteicons/svg/clone.php"; ?>
-                        <?= translate('clone', $i18n) ?>
-                    </li>
-                </ul>
-            </div>
-            <div class="subscription-secondary">
-                <span
-                    class="name"><?php include $imagePath . "images/siteicons/svg/subscription.php"; ?><?= $subscription['name'] ?></span>
-                <span class="payer_user"
-                    title="<?= translate('paid_by', $i18n) ?>"><?php include $imagePath . "images/siteicons/svg/payment.php"; ?><?= $members[$subscription['payer_user_id']]['name'] ?></span>
-                <span class="category"
-                    title="<?= translate('category', $i18n) ?>"><?php include $imagePath . "images/siteicons/svg/category.php"; ?><?= $categories[$subscription['category_id']]['name'] ?></span>
-                <?php
-                if ($subscription['url'] != "") {
-                    $url = $subscription['url'];
-                    if (!preg_match('/^https?:\/\//', $url)) {
-                        $url = "https://" . $url;
+                    <span class="name"><?= $subscription['name'] ?></span>
+                    <span class="cycle"
+                        title="<?= $subscription['auto_renew'] ? translate("automatically_renews", $i18n) : translate("manual_renewal", $i18n) ?>">
+                        <?php
+                        if ($subscription['auto_renew']) {
+                            include $imagePath . "images/siteicons/svg/automatic.php";
+                        } else {
+                            include $imagePath . "images/siteicons/svg/manual.php";
+                        }
+                        ?>
+                        <?= $subscription['billing_cycle'] ?>
+                    </span>
+                    <span class="next"><?= $subscription['next_payment'] ?></span>
+                    <span class="price">
+                        <span class="payment_method">
+                            <img src="<?= $subscription['payment_method_icon'] ?>"
+                                title="<?= translate('payment_method', $i18n) ?>: <?= $subscription['payment_method_name'] ?>" />
+                        </span>
+                        <span class="value">
+                            <?= CurrencyFormatter::format($subscription['price'], $subscription['currency_code']) ?>
+                            <?php
+                            if (isset($subscription['original_price']) && $subscription['original_price'] != $subscription['price']) {
+                                ?>
+                                <span
+                                    class="original_price">(<?= CurrencyFormatter::format($subscription['original_price'], $subscription['original_currency_code']) ?>)</span>
+                                <?php
+                            }
+                            ?>
+                        </span>
+                    </span>
+                    <?php
+                    $desktopMenuButtonClass = ""; {
+                    }
+                    if ($mobileNavigation === "true") {
+                        $desktopMenuButtonClass = "mobileNavigationHideOnMobile";
                     }
                     ?>
-                    <span class="url" title="<?= translate('external_url', $i18n) ?>"><a href="<?= $url ?>"
-                            target="_blank"><?php include $imagePath . "images/siteicons/svg/web.php"; ?></a></span>
+                    <button type="button" class="actions-expand <?= $desktopMenuButtonClass ?>"
+                        onClick="expandActions(event, <?= $subscription['id'] ?>)">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </button>
+                    <ul class="actions">
+                        <li class="edit" title="<?= translate('edit_subscription', $i18n) ?>"
+                            onClick="openEditSubscription(event, <?= $subscription['id'] ?>)">
+                            <?php include $imagePath . "images/siteicons/svg/edit.php"; ?>
+                            <?= translate('edit_subscription', $i18n) ?>
+                        </li>
+                        <li class="delete" title="<?= translate('delete', $i18n) ?>"
+                            onClick="deleteSubscription(event, <?= $subscription['id'] ?>)">
+                            <?php include $imagePath . "images/siteicons/svg/delete.php"; ?>
+                            <?= translate('delete', $i18n) ?>
+                        </li>
+                        <li class="clone" title="<?= translate('clone', $i18n) ?>"
+                            onClick="cloneSubscription(event, <?= $subscription['id'] ?>)">
+                            <?php include $imagePath . "images/siteicons/svg/clone.php"; ?>
+                            <?= translate('clone', $i18n) ?>
+                        </li>
+                        <?php
+                        if ($subscription['auto_renew'] != 1) {
+                            ?>
+                            <li class="renew" title="<?= translate('renew', $i18n) ?>"
+                                onClick="renewSubscription(event, <?= $subscription['id'] ?>)">
+                                <?php include $imagePath . "images/siteicons/svg/renew.php"; ?>
+                                <?= translate('renew', $i18n) ?>
+                            </li>
+                            <?php
+                        }
+                        ?>
+                    </ul>
+                </div>
+                <div class="subscription-secondary">
+                    <span
+                        class="name"><?php include $imagePath . "images/siteicons/svg/subscription.php"; ?><?= $subscription['name'] ?></span>
+                    <span class="payer_user"
+                        title="<?= translate('paid_by', $i18n) ?>"><?php include $imagePath . "images/siteicons/svg/payment.php"; ?><?= $members[$subscription['payer_user_id']]['name'] ?></span>
+                    <span class="category"
+                        title="<?= translate('category', $i18n) ?>"><?php include $imagePath . "images/siteicons/svg/category.php"; ?><?= $categories[$subscription['category_id']]['name'] ?></span>
+                    <?php
+                    if ($subscription['url'] != "") {
+                        $url = $subscription['url'];
+                        if (!preg_match('/^https?:\/\//', $url)) {
+                            $url = "https://" . $url;
+                        }
+                        ?>
+                        <span class="url" title="<?= translate('external_url', $i18n) ?>"><a href="<?= $url ?>"
+                                target="_blank"><?php include $imagePath . "images/siteicons/svg/web.php"; ?></a></span>
+                        <?php
+                    }
+                    ?>
+                </div>
+                <?php
+                if ($subscription['notes'] != "") {
+                    ?>
+                    <div class="subscription-notes">
+                        <span class="notes">
+                            <?php include $imagePath . "images/siteicons/svg/notes.php"; ?>
+                            <?= $subscription['notes'] ?>
+                        </span>
+                    </div>
                     <?php
                 }
                 ?>
             </div>
-            <?php
-            if ($subscription['notes'] != "") {
-                ?>
-                <div class="subscription-notes">
-                    <span class="notes">
-                        <?php include $imagePath . "images/siteicons/svg/notes.php"; ?>
-                        <?= $subscription['notes'] ?>
-                    </span>
-                </div>
-                <?php
-            }
-            ?>
         </div>
         <?php
     }
